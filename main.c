@@ -169,6 +169,13 @@ bus_cb (GstBus * bus, GstMessage * msg, gpointer user_data)
 					gst_element_state_get_name (new_state));
 			break;
 		}
+		case GST_MESSAGE_APPLICATION: {
+			if(gst_message_has_name (message, "ready-to-go")) {
+				PRINT("all ready");
+				gst_element_set_state(pipeline, GST_STATE_PLAYING);
+			}
+			break;
+		}
 		case GST_MESSAGE_EOS: {
 			/* g_main_loop_quit (loop); */
 			break;
@@ -413,7 +420,7 @@ main (int argc, char **argv)
 	gst_bin_add_many (GST_BIN (pipeline), adder, conv, resample, filter1, sink, NULL);
 	gst_element_link_many (adder, conv, resample, filter1, sink, NULL);
 
-	gst_element_set_state (pipeline, GST_STATE_PLAYING);
+	gst_element_set_state (pipeline, GST_STATE_PAUSED);
 	loop = g_main_loop_new (NULL, FALSE);
 	gst_bus_add_watch (GST_ELEMENT_BUS (pipeline), bus_cb, loop);
 
