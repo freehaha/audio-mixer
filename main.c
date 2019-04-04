@@ -46,6 +46,7 @@ static GstElement *adder;
 static GstElement *conv;
 static GstElement *pipeline;
 static GMainLoop *loop;
+static GstBus *bus;
 static int pipecount = 0;
 
 static GAsyncQueue *free_pipes = NULL;
@@ -71,12 +72,8 @@ static GstPadProbeReturn
 block_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
 {
 	PipeData *pipe = (PipeData*) user_data;
-	if(!pipe->free) {
-		PRINT("blocking p%d\n", pipe->id);
-		return GST_PAD_PROBE_OK;
-	}
-	PRINT("unblocking p%d\n", pipe->id);
-	return GST_PAD_PROBE_REMOVE;
+	PRINT("p%d blocking\n", pipe->id);
+	return GST_PAD_PROBE_OK;
 }
 
 static void
@@ -85,10 +82,12 @@ setnull(GstElement *element, gpointer data) {
 	gst_element_set_state(element, GST_STATE_NULL);
 	gst_bin_remove(GST_BIN(pipeline), pipe->src);
 	pipe->src = NULL;
+	pipe->src_pad = NULL;
 	g_atomic_int_set(&(pipe->free), 1);
 	g_async_queue_push(free_pipes, pipe);
 	PRINT("pipe %d removed.\n", pipe->id);
 }
+
 static int remove_src(gpointer data) {
 	PipeData *pipe = (PipeData*) data;
 	PRINT("removing src, pipe %d.\n", pipe->id);
@@ -128,15 +127,16 @@ event_probe_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
 	PipeData *pipe = (PipeData*) user_data;
 	PRINT("p%d e: %s\n", pipe->id, name);
 	if(ev == GST_EVENT_STREAM_START) {
+		PRINT("p%d playing %d\n", pipe->id, pipe->playing);
+		PRINT("p%d src_pad %x\n", pipe->id, pipe->src_pad);
 		g_atomic_int_set(&(pipe->playing), 1);
+		/* gst_element_set_state(pipe->src, GST_STATE_PLAYING); */
 		gst_element_set_state(pipeline, GST_STATE_PLAYING);
 	} else if(ev == GST_EVENT_EOS) {
-		/* g_print("Got EOS, freeing pipe\n"); */
 		g_atomic_int_set(&(pipe->playing), 0);
 		remove_src(pipe);
-		/* gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BLOCKING, block_cb, user_data, NULL); */
 		/* gst_pad_remove_probe(pad, GST_PAD_PROBE_INFO_ID (info)); */
-		/* g_idle_add(remove_src, pipe); */
+		return GST_PAD_PROBE_REMOVE;
 	}
 	return GST_PAD_PROBE_PASS;
 }
@@ -149,7 +149,7 @@ bus_cb (GstBus * bus, GstMessage * msg, gpointer user_data)
 		case GST_MESSAGE_ERROR: {
 			GError *err = NULL;
 			gchar *dbg;
-
+			PRINT("Element %s:\n", GST_OBJECT_NAME (msg->src));
 			gst_message_parse_error (msg, &err, &dbg);
 			gst_object_default_error (msg->src, err, dbg);
 			g_clear_error (&err);
@@ -170,8 +170,8 @@ bus_cb (GstBus * bus, GstMessage * msg, gpointer user_data)
 			break;
 		}
 		case GST_MESSAGE_APPLICATION: {
-			if(gst_message_has_name (message, "ready-to-go")) {
-				PRINT("all ready");
+			if(gst_message_has_name (msg, "ready-to-go")) {
+				PRINT("all ready\n");
 				gst_element_set_state(pipeline, GST_STATE_PLAYING);
 			}
 			break;
@@ -204,11 +204,12 @@ void play_file(const gchar *filename) {
 	int playing = is_playing();
 	if(!playing) {
 		PRINT("nothing is playing, setting to ready\n");
+		/* gst_element_set_state (pipeline, GST_STATE_PAUSED); */
 		gst_element_set_state (pipeline, GST_STATE_READY);
 	}
 	strncat(path, filename, 255);
 	PipeData *pipe = make_pipe(path);
-	gst_element_set_state (pipeline, GST_STATE_PLAYING);
+	/* gst_element_set_state (pipeline, GST_STATE_PLAYING); */
 }
 
 static gboolean
@@ -337,7 +338,6 @@ PipeData* make_pipe(const gchar *filename) {
 		g_atomic_int_set(&(data->playing), 0);
 		PRINT("new pipe %d\n", data->id);
 		data->adder = adder;
-		pipes = g_list_append(pipes, data);
 
 		data->conv = gst_element_factory_make ("audioconvert", NULL);
 		data->resample = gst_element_factory_make ("audioresample", NULL);
@@ -347,6 +347,10 @@ PipeData* make_pipe(const gchar *filename) {
 
 		gst_bin_add_many(GST_BIN (pipeline), data->conv, data->resample, data->caps, NULL);
 		gst_element_link_many(data->conv, data->resample, data->caps, NULL);
+		gst_element_set_state(data->conv, GST_STATE_PAUSED);
+		gst_element_set_state(data->resample, GST_STATE_PAUSED);
+		gst_element_set_state(data->caps, GST_STATE_PAUSED);
+		pipes = g_list_append(pipes, data);
 	}
 	GstPad *sink_pad = gst_element_get_request_pad (adder, "sink_%u");
 	GstPad *caps_pad = gst_element_get_static_pad(data->caps, "src");
@@ -355,12 +359,13 @@ PipeData* make_pipe(const gchar *filename) {
 	gst_object_unref (caps_pad);
 
 	data->src = gst_element_factory_make ("uridecodebin", NULL);
-	g_object_set (data->src, "uri", filename, NULL);
-	g_signal_connect(data->src, "pad-added", G_CALLBACK(pad_added_handler), data);
-	gst_bin_add(GST_BIN (pipeline), data->src);
-	/* gst_element_set_state(data->src, GST_STATE_PLAYING); */
 	g_atomic_int_set(&(data->free), 0);
 	g_atomic_int_set(&(data->playing), 0);
+	g_object_set (data->src, "uri", filename, NULL);
+	g_signal_connect(data->src, "pad-added", G_CALLBACK(pad_added_handler), data);
+	/* gst_bin_add(GST_BIN (pipeline), data->src); */
+	/* gst_element_set_state(data->src, GST_STATE_PLAYING); */
+	gst_element_set_state(data->src, GST_STATE_PAUSED);
 
 	return data;
 }
@@ -392,7 +397,7 @@ main (int argc, char **argv)
 	if(opt_pipefile == NULL) {
 		pipefile = "/tmp/audio-mixer.pipe";
 	} else {
-		pipefile = strdup(opt_pipefile);
+		pipefile = g_strdup(opt_pipefile);
 	}
 	g_print("pipe file: %s\n", pipefile);
 	g_option_context_free (ctx);
@@ -404,6 +409,7 @@ main (int argc, char **argv)
 	init_io();
 
 	pipeline = gst_pipeline_new ("pipeline");
+	bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
 	adder = gst_element_factory_make ("adder", NULL);
 	conv = gst_element_factory_make ("audioconvert", NULL);
 	resample = gst_element_factory_make ("audioresample", NULL);
@@ -435,15 +441,16 @@ main (int argc, char **argv)
 	return 0;
 }
 
-static void drained_handler (GstElement *src, GstPad *new_pad, void *data) {
-	g_print ("drained\n");
-}
-
 static void pad_added_handler (GstElement *src, GstPad *new_pad, void *data) {
 	/* GstElement *sink = GST_ELEMENT(data); */
 	PipeData *pipe = (PipeData*)data;
 	GstPadLinkReturn ret;
 	if(g_atomic_int_get(&(pipe->free)) == 1) { /* shouldn't link anything, this is being removed */
+		PRINT("skipping link %d p%d\n", pipe->id);
+		return;
+	}
+	if(g_atomic_int_get(&(pipe->playing)) == 1) { /* shouldn't link anything, this is being removed */
+		PRINT("skipping link: playing %d\n", pipe->id);
 		return;
 	}
 	GstPad *sink_pad = gst_element_get_static_pad (pipe->conv, "sink");
@@ -452,6 +459,7 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, void *data) {
 		g_print ("We are already linked. Ignoring.\n");
 		goto exit;
 	}
+	gst_bin_add(GST_BIN (pipeline), pipe->src);
 	ret = gst_pad_link (new_pad, sink_pad);
 
 	if (GST_PAD_LINK_FAILED (ret)) {
@@ -461,8 +469,10 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, void *data) {
 		g_atomic_int_set(&(pipe->playing), 0);
 		/* remove_src(pipe); */
 	} else {
-		PRINT ("Link succeeded\n");
+		PRINT ("Link succeeded p%d\n", pipe->id);
 		pipe->src_pad = new_pad;
+		/* gst_pad_add_probe (new_pad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM , block_cb, data, NULL); */
+		/* gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BLOCKING, block_cb, user_data, NULL); */
 		gst_pad_add_probe (new_pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM , event_probe_cb, data, NULL);
 	}
 exit:

@@ -7,3 +7,14 @@ while [[ 1 ]]; do
 	echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/action-mch-f71c-0.wav > mixer
 	sleep 0.5
 done
+
+# echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/action-test-ac00-0.wav > mixer
+#
+# sleep 3
+# echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/alert.wav > mixer
+#
+# sleep 0.3
+# echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/action-test-ac00-1.wav > mixer
+# echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/alert.wav > mixer
+# echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/action-test-ac00-1.wav > mixer
+# echo /home/haha/src/perl/ffxiv/scripts/sounds-azure/action-test-ac00-0.wav > mixer
