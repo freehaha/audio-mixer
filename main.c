@@ -35,13 +35,6 @@ typedef struct {
 	int id;
 } PipeData;
 
-const char* BOARD[] = {
-	"/home/haha/sounds/2.wav",
-	"/home/haha/sounds/1.wav",
-	"/home/haha/1.wav",
-	"/home/haha/2.wav",
-};
-
 static GstElement *adder;
 static GstElement *conv;
 static GstElement *pipeline;
@@ -227,12 +220,7 @@ gio_in (GIOChannel *gio, GIOCondition condition, gpointer data)
 	if (ret == G_IO_STATUS_ERROR)
 		g_error ("Error reading: %s\n", err->message);
 
-	if(msg[0] - '1' >= 0 && msg[0] - '1' <= 5) {
-		/* gst_element_set_state (pipeline, GST_STATE_READY); */
-		PRINT("playing %c\n", msg[0]);
-		play_file(BOARD[msg[0]-'1']);
-	}
-	else if(msg[0] == 'r') {
+	if(msg[0] == 'r') {
 	}
 	else if(msg[0] == 'q') {
 		g_main_loop_quit (loop);
