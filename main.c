@@ -61,14 +61,6 @@ void set_shadow()
 	tcsetattr(0, TCSANOW, &new_t);                                                                                                                                                                                                       
 }                                                                                                                                                                                                                                        
 
-static GstPadProbeReturn
-block_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
-{
-	PipeData *pipe = (PipeData*) user_data;
-	PRINT("p%d blocking\n", pipe->id);
-	return GST_PAD_PROBE_OK;
-}
-
 static void
 setnull(GstElement *element, gpointer data) {
 	PipeData *pipe = (PipeData*) data;
@@ -100,14 +92,6 @@ static int remove_src(gpointer data) {
 
 	gst_object_unref(caps_pad);
 	gst_element_call_async(pipe->src, setnull, pipe, NULL);
-	/* gst_element_set_state(pipe->src, GST_STATE_NULL); */
-	/* g_print("removing src from bin..\n"); */
-	/* gst_bin_remove(GST_BIN(pipeline), pipe->src); */
-	/* pipe->src = NULL; */
-	/* g_print("set free\n"); */
-	/* g_atomic_int_set(&(pipe->free), 1); */
-	/* g_async_queue_push(free_pipes, pipe); */
-	/* g_print("pipe %d removed.\n", pipe->id); */
 	return FALSE;
 }
 
@@ -123,12 +107,10 @@ event_probe_cb (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
 		PRINT("p%d playing %d\n", pipe->id, pipe->playing);
 		PRINT("p%d src_pad %x\n", pipe->id, pipe->src_pad);
 		g_atomic_int_set(&(pipe->playing), 1);
-		/* gst_element_set_state(pipe->src, GST_STATE_PLAYING); */
 		gst_element_set_state(pipeline, GST_STATE_PLAYING);
 	} else if(ev == GST_EVENT_EOS) {
 		g_atomic_int_set(&(pipe->playing), 0);
 		remove_src(pipe);
-		/* gst_pad_remove_probe(pad, GST_PAD_PROBE_INFO_ID (info)); */
 		return GST_PAD_PROBE_REMOVE;
 	}
 	return GST_PAD_PROBE_PASS;
@@ -197,12 +179,10 @@ void play_file(const gchar *filename) {
 	int playing = is_playing();
 	if(!playing) {
 		PRINT("nothing is playing, setting to ready\n");
-		/* gst_element_set_state (pipeline, GST_STATE_PAUSED); */
 		gst_element_set_state (pipeline, GST_STATE_READY);
 	}
 	strncat(path, filename, 255);
 	PipeData *pipe = make_pipe(path);
-	/* gst_element_set_state (pipeline, GST_STATE_PLAYING); */
 }
 
 static gboolean
@@ -351,8 +331,6 @@ PipeData* make_pipe(const gchar *filename) {
 	g_atomic_int_set(&(data->playing), 0);
 	g_object_set (data->src, "uri", filename, NULL);
 	g_signal_connect(data->src, "pad-added", G_CALLBACK(pad_added_handler), data);
-	/* gst_bin_add(GST_BIN (pipeline), data->src); */
-	/* gst_element_set_state(data->src, GST_STATE_PLAYING); */
 	gst_element_set_state(data->src, GST_STATE_PAUSED);
 
 	return data;
@@ -459,8 +437,6 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, void *data) {
 	} else {
 		PRINT ("Link succeeded p%d\n", pipe->id);
 		pipe->src_pad = new_pad;
-		/* gst_pad_add_probe (new_pad, GST_PAD_PROBE_TYPE_BLOCK_DOWNSTREAM , block_cb, data, NULL); */
-		/* gst_pad_add_probe(pad, GST_PAD_PROBE_TYPE_BLOCKING, block_cb, user_data, NULL); */
 		gst_pad_add_probe (new_pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM , event_probe_cb, data, NULL);
 	}
 exit:

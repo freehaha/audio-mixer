@@ -8,7 +8,7 @@ debug: main.c
 	./out -f ./mixer 2>&1 | tee log
 
 compile: main.c
-	gcc -O2 -o out `pkg-config --cflags --libs gstreamer-1.0` main.c
+	gcc-8 -O2 -o out `pkg-config --cflags --libs gstreamer-1.0` main.c
 
 discord: discord.c
 	gcc -o discord `pkg-config --cflags --libs gstreamer-1.0` discord.c
